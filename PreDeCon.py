@@ -5,11 +5,9 @@ import copy
 
 
 class PreDeCon:
-    """Class implementing PreDeCon algorithm."""
-
     def __init__(self, data, epsilon, delta, mu, lamb, kappa):
-        """Generates new instance, copies data into class attributes.
-        :param data: ndarray of ndarrays. Rows correspond to data points, columns to attribute values.
+        """
+        :param data: data array: numpy ndarray
         :param epsilon: Defines region of interest for each point in data set; radius parameter for variance calcs
         :param delta: Threshold parameter for variance along attriubte determining the subspace preference dim.
         :param mu: Minimum number of points (similar to DBSCAN)
