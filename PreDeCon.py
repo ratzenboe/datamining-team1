@@ -56,7 +56,7 @@ class PreDeCon:
         attribute_vars = np.empty(shape=(0, self.nb_dimensions))
         for idx in range(self.nb_points):
             # Calculate attribute variances
-            var_attr = np.sum((self.data[idx] - [self.epsilon_neighbourhoods[idx]]) ** 2, axis=0) / len(
+            var_attr = np.sum((self.data[idx] - self.data[self.epsilon_neighbourhoods[idx]]) ** 2, axis=0) / len(
                 self.epsilon_neighbourhoods[idx])
             attribute_vars = np.vstack([attribute_vars, var_attr])  # Save them in numpy ndarray
         return attribute_vars
@@ -128,7 +128,6 @@ class PreDeCon:
         """Run clustering algorithm
         :return: cluster labels for each point
         """
-        core_point_indices = np.arange(self.nb_points)[self.preference_weighted_core_points]
         labels_dict = {}          # Stores the processed data points and respective label info
         current_label_id = -1     # Cluster label id
         for point_idx in range(self.nb_points):
@@ -150,9 +149,9 @@ class PreDeCon:
 
                         for new_point in possible_cluster_candidates:
                             if new_point not in labels_dict:
-                                if new_point!=cluster_candidate:   # should not add the same point again
+                                if new_point != cluster_candidate:   # should not add the same point again
                                     cluster_member_search_list.append(new_point)
-                                labels_dict[labels_dict] = current_label_id
+                                labels_dict[new_point] = current_label_id  # Point gets corresponding cluster id
                             elif labels_dict[new_point] == -1:  # if the point is currently classified as noise
                                 labels_dict[new_point] = current_label_id
 
@@ -162,4 +161,4 @@ class PreDeCon:
         for p_idx, label_id in labels_dict.items():
             self.labels_[p_idx] = label_id
 
-        return self.labels_
+        return
