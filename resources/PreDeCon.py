@@ -2,7 +2,6 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial.distance import cdist
 import copy
-import time
 
 
 class PreDeCon:
@@ -25,30 +24,18 @@ class PreDeCon:
 
         # Number of points and dimensions
         self.nb_points, self.nb_dimensions = data.shape
-        print('0')
 
         # Fill member variables at initialization
         self.epsilon_neighbourhoods = self.create_epsilon_neighbourhoods()
-        print('1')
         self.attribute_variances = self.create_variances_along_attributes()
-        print('2')
         self.subspace_preference_dimensionalities = self.create_subspace_preference_dimensionality()
-        print('3')
         self.subspace_preference_vectors = self.create_subspace_preference_vectors()
-        print('4')
-        # problem after 4
-        start = time.time()
         self.pref_weighted_similarity_measures = self.create_preference_weighted_similarity_matrix()
-        end = time.time()
-        print('5, time = ', end - start)
         self.preference_weighted_neighbourhoods = self.create_preference_weighted_epsilon_neighbourhood()
-        print('6')
         self.preference_weighted_core_points = self.create_preference_weighted_core_points()
-        print('7')
-        
+
         # Cluster label information
         self.labels_ = np.full(shape=(self.nb_points,), fill_value=np.nan)
-        print('8')
 
     def create_epsilon_neighbourhoods(self):
         """Calculate epsilon-neighbourhood for each data point
@@ -97,62 +84,22 @@ class PreDeCon:
         """
         # Create distance matrix for each attribute
         dist_mtrx_cols = np.empty(shape=(self.nb_points, self.nb_points, self.nb_dimensions))
-        print('5.1')
-        # print('self.nb_dimensions = ', self.nb_dimensions)
-        
-        start = time.time()
         for i in range(self.nb_dimensions):
-            dist_mtrx_cols[:, :, i] = cdist(self.data[:, i, None], self.data[:, i, None], 'euclidean') ** 2  
-        end = time.time()
-        print('loop after 5.1 run time = ', end - start)
-        # it took during one run 72.66661500930786 sec with Sebastian's parameters/10
-        # it took during one run 119.07423210144043 sec with Sebastian's parameters
-        # it took during one run 69.43253707885742 sec with parameters: epsilon=0.05; delta=0.025; mu=5; lamb=0.01; kappa=500
-        # it took during one run 54.549379110336304 sec with Sebastian's parameters and: epsilon=0.1
-        # it took during one run 47.692484855651855 sec with Sebastian's parameters and: delta=0.025
-        # it took during one run 71.068363904953 sec with Sebastian's parameters and: epsilon=0.1, delta=0.025
-        # it took during one run ? sec with Sebastian's parameters and: 
-        # it took during one run ? sec with Sebastian's parameters and: 
-        print('5.2')
-        
+            dist_mtrx_cols[:, :, i] = cdist(self.data[:, i, None], self.data[:, i, None], 'euclidean') ** 2
+
         # Can multiply each column and row with weight vector; the final matrix is the maximum of those oparations
-        start = time.time()
         dist_mtrx_rows = copy.deepcopy(dist_mtrx_cols)
-        end = time.time()
-        print('loop after 5.2 run time = ', end - start)
-        # it took during one run 72.06935811042786 sec with Sebastian's parameters/10
-        # it took during one run 102.9776132106781 sec with Sebastian's parameters
-        # it took during one run 79.9322760105133 sec with parameters: epsilon=0.05; delta=0.025; mu=5; lamb=0.01; kappa=500
-        #
-        # it took during one run 69.26668190956116 sec with Sebastian's parameters and: delta=0.025
-        print('5.3')
-        
-        # problem in loop after 5.3, it went through 1 iteration for i=0 and then kernel died error was shown
-        
         # Multiply each row by the corresponding weight
-        start = time.time()
-        for i in range(self.nb_dimensions): 
-            dist_mtrx_rows[:, :, i] *= self.subspace_preference_vectors[:, i, None]
-        end = time.time()
-        print('loop after 5.3 run time = ', end - start)
-        print('5.4')
-        
+        for i in range(self.nb_dimensions): dist_mtrx_rows[:, :, i] *= self.subspace_preference_vectors[:, i, None]
         # Multiply each column by the corresponding weight
-        start = time.time()
-        for i in range(self.nb_dimensions): 
-            dist_mtrx_cols[:, :, i] *= self.subspace_preference_vectors[:, i]
-        end = time.time()
-        print('loop after 5.4 run time = ', end - start)
-        print('5.5')
-        
+        for i in range(self.nb_dimensions): dist_mtrx_cols[:, :, i] *= self.subspace_preference_vectors[:, i]
+
         # Compute full distance matrix by summing over the 3rd axis and then taking the square root
         dist_mtrx_rows = np.sqrt(np.sum(dist_mtrx_rows, axis=2))
-        print('5.6')
         dist_mtrx_final = np.sqrt(np.sum(dist_mtrx_cols, axis=2))
-        print('5.7')
         # To symmetrize the distance matrix choose the largest distance
         dist_mtrx_final[dist_mtrx_rows > dist_mtrx_final] = dist_mtrx_rows[dist_mtrx_rows > dist_mtrx_final]
-        print('5.8')
+
         return dist_mtrx_final
 
     def create_preference_weighted_epsilon_neighbourhood(self):
