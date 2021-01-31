@@ -89,7 +89,9 @@ class PreDeCon:
         # We only need to compare the distances to points within the epsilon shell (to determine if a point is a core point)
         # Since the subspace scaling factor kappa is >>1 (and not <1), no distances to other points will be needed for 
         # the core point evaluation
-        _, neigh_ind = self.neigbors_clf.radius_neighbors(radius=self.epsilon)   # get points in epsilon shell: attententio point itself is not in neigh_ind list
+
+        # get points in epsilon shell: attententio point itself is not in neigh_ind list
+        _, neigh_ind = self.neigbors_clf.radius_neighbors(radius=self.epsilon)
         row, col, pwsim = [], [], []
         for i, ith_neigh_ind in enumerate(neigh_ind):
             # Calculate preference weighted similarity measure with point and neighbors in eps shell
@@ -101,8 +103,7 @@ class PreDeCon:
             pwsim.extend(pwsim_ith.tolist())      # Data
             row.extend([i]*(pwsim_ith.shape[0]))  # ith Row 
             col.extend(ith_neigh_ind.tolist())    # column info
-            
-            
+
         # Construct sparse matrix with data, row, and column info
         A = csr_matrix((pwsim, (row, col)), shape=(self.nb_points, self.nb_points))
         # Create symmetric version: take the elementwise maximum of A and its transpose A.T
