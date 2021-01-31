@@ -1,16 +1,7 @@
-"""
-
-Modified version with comments; only for testing
-
-"""
-
-
-
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
-from scipy.spatial.distance import cdist
+from scipy.sparse import csr_matrix
 import copy
-import time
 
 
 class PreDeCon:
@@ -33,39 +24,30 @@ class PreDeCon:
 
         # Number of points and dimensions
         self.nb_points, self.nb_dimensions = data.shape
-        print('0')
 
+        # Nearest neighbor structure
+        self.neigbors_clf = None
+            
         # Fill member variables at initialization
         self.epsilon_neighbourhoods = self.create_epsilon_neighbourhoods()
-        print('1')
         self.attribute_variances = self.create_variances_along_attributes()
-        print('2')
         self.subspace_preference_dimensionalities = self.create_subspace_preference_dimensionality()
-        print('3')
         self.subspace_preference_vectors = self.create_subspace_preference_vectors()
-        print('4')
-        # problem after 4
-        start = time.time()
         self.pref_weighted_similarity_measures = self.create_preference_weighted_similarity_matrix()
-        end = time.time()
-        print('5, time = ', end - start)
         self.preference_weighted_neighbourhoods = self.create_preference_weighted_epsilon_neighbourhood()
-        print('6')
         self.preference_weighted_core_points = self.create_preference_weighted_core_points()
-        print('7')
-        
+
         # Cluster label information
         self.labels_ = np.full(shape=(self.nb_points,), fill_value=np.nan)
-        print('8')
 
     def create_epsilon_neighbourhoods(self):
         """Calculate epsilon-neighbourhood for each data point
         :return: numpy ndarray where each row contains the indices of points that
                  are in the neighborhood of a certain point
         """
-        neigh = NearestNeighbors(radius=self.epsilon)
-        neigh.fit(self.data)
-        _, neigh_idx = neigh.radius_neighbors(self.data)
+        self.neigbors_clf = NearestNeighbors(radius=self.epsilon, algorithm='ball_tree')
+        self.neigbors_clf.fit(self.data)
+        _, neigh_idx = self.neigbors_clf.radius_neighbors(self.data)
         return neigh_idx
 
     def create_variances_along_attributes(self):
@@ -99,80 +81,48 @@ class PreDeCon:
         weight_vec[self.attribute_variances <= self.delta] = self.kappa
         return weight_vec
 
+    
     def create_preference_weighted_similarity_matrix(self):
-        """Calcuate similarity matrix of all points in the data set (fast implementation but O(2*n^2*d) memory complexit)
+        """Calcuate sparse similarity matrix of all points in the data set
         :return: numpy ndarray: symmetrical distance matrix using the weighted similarity measure
         """
-        # Create distance matrix for each attribute
-        dist_mtrx_cols = np.empty(shape=(self.nb_points, self.nb_points, self.nb_dimensions))
-        print('5.1')
-        # print('self.nb_dimensions = ', self.nb_dimensions)
+        # We only need to compare the distances to points within the epsilon shell (to determine if a point is a core point)
+        # Since the subspace scaling factor kappa is >>1 (and not <1), no distances to other points will be needed for 
+        # the core point evaluation
+        _, neigh_ind = self.neigbors_clf.radius_neighbors(radius=self.epsilon)   # get points in epsilon shell: attententio point itself is not in neigh_ind list
+        row, col, pwsim = [], [], []
+        for i, ith_neigh_ind in enumerate(neigh_ind):
+            # Calculate preference weighted similarity measure with point and neighbors in eps shell
+            sq_diffs = np.square(self.data[ith_neigh_ind,:] - self.data[i,:])
+            sum_weighted_sq_diffs = np.inner(self.subspace_preference_vectors[i,:], sq_diffs)
+            pwsim_ith = np.sqrt(sum_weighted_sq_diffs)
+            
+            # Info for sparse matrix
+            pwsim.extend(pwsim_ith.tolist())      # Data
+            row.extend([i]*(pwsim_ith.shape[0]))  # ith Row 
+            col.extend(ith_neigh_ind.tolist())    # column info
+            
+            
+        # Construct sparse matrix with data, row, and column info
+        A = csr_matrix((pwsim, (row, col)), shape=(self.nb_points, self.nb_points))
+        # Create symmetric version: take the elementwise maximum of A and its transpose A.T
+        transpose_is_bigger = A.T>A
+        A = A - A.multiply(transpose_is_bigger) + (A.T).multiply(transpose_is_bigger)
         
-        start = time.time()
-        for i in range(self.nb_dimensions):
-            dist_mtrx_cols[:, :, i] = cdist(self.data[:, i, None], self.data[:, i, None], 'euclidean') ** 2  
-        end = time.time()
-        print('loop after 5.1 run time = ', end - start)
-        # it took during one run 72.66661500930786 sec with Sebastian's parameters/10
-        # it took during one run 119.07423210144043 sec with Sebastian's parameters
-        # it took during one run 69.43253707885742 sec with parameters: epsilon=0.05; delta=0.025; mu=5; lamb=0.01; kappa=500
-        # it took during one run 54.549379110336304 sec with Sebastian's parameters and: epsilon=0.1
-        # it took during one run 47.692484855651855 sec with Sebastian's parameters and: delta=0.025
-        # it took during one run 71.068363904953 sec with Sebastian's parameters and: epsilon=0.1, delta=0.025
-        
-        # it took during one run 45.503710985183716 sec with Sebastian's parameters and shortest_path instead of gram: 
-        # it took during one run ? sec with Sebastian's parameters and: 
-        print('5.2')
-        
-        # Can multiply each column and row with weight vector; the final matrix is the maximum of those oparations
-        start = time.time()
-        dist_mtrx_rows = copy.deepcopy(dist_mtrx_cols)
-        end = time.time()
-        print('loop after 5.2 run time = ', end - start)
-        # it took during one run 72.06935811042786 sec with Sebastian's parameters/10
-        # it took during one run 102.9776132106781 sec with Sebastian's parameters
-        # it took during one run 79.9322760105133 sec with parameters: epsilon=0.05; delta=0.025; mu=5; lamb=0.01; kappa=500
-        #
-        # it took during one run 69.26668190956116 sec with Sebastian's parameters and: delta=0.025
-        
-        # it took during one run 68.9875500202179 sec with Sebastian's parameters and shortest_path instead of gram: 
-        print('5.3')
-        
-        # problem in loop after 5.3, it went through 1 iteration for i=0 and then kernel died error was shown
-        
-        # Multiply each row by the corresponding weight
-        start = time.time()
-        for i in range(self.nb_dimensions): 
-            dist_mtrx_rows[:, :, i] *= self.subspace_preference_vectors[:, i, None]
-        end = time.time()
-        print('loop after 5.3 run time = ', end - start)
-        print('5.4')
-        
-        # Multiply each column by the corresponding weight
-        start = time.time()
-        for i in range(self.nb_dimensions): 
-            dist_mtrx_cols[:, :, i] *= self.subspace_preference_vectors[:, i]
-        end = time.time()
-        print('loop after 5.4 run time = ', end - start)
-        print('5.5')
-        
-        # Compute full distance matrix by summing over the 3rd axis and then taking the square root
-        dist_mtrx_rows = np.sqrt(np.sum(dist_mtrx_rows, axis=2))
-        print('5.6')
-        dist_mtrx_final = np.sqrt(np.sum(dist_mtrx_cols, axis=2))
-        print('5.7')
-        # To symmetrize the distance matrix choose the largest distance
-        dist_mtrx_final[dist_mtrx_rows > dist_mtrx_final] = dist_mtrx_rows[dist_mtrx_rows > dist_mtrx_final]
-        print('5.8')
-        return dist_mtrx_final
+        return A
+    
 
     def create_preference_weighted_epsilon_neighbourhood(self):
         """New neighborhood definition under the weighted similarity measure
         :return: List of numpy 1D arrays containing indices of points in the preference weighted eps. nbh
         """
-        arr_indices = np.arange(self.nb_points)
-        weighted_eps_neighbh = [arr_indices[dist_row < self.epsilon]
-                                for dist_row in self.pref_weighted_similarity_measures]
+        
+        A = self.pref_weighted_similarity_measures   # distances matrix
+        A[A>self.epsilon] = 0   # set distances greater than epsilon to 0
+        A.eliminate_zeros()     # then remove these entries from matrix
+        # For each entry in data get neighbor indices with preference weighted distance less than epsilon
+        weighted_eps_neighbh = np.split(A.indices, A.indptr)[1:-1]  
+
         return weighted_eps_neighbh
 
     def create_preference_weighted_core_points(self):
@@ -181,7 +131,7 @@ class PreDeCon:
             2. The number of preference weighted epsilon neighbors is larger than mu
         :return: numpy 1D array: boolian type array (True: is core point)
         """
-        is_core_point = np.array([(len(pwn)>=self.mu) & (spd<=self.lamb)
+        is_core_point = np.array([(len(pwn)+1>=self.mu) & (spd<=self.lamb)   # +1 because point itself is not taken into account in radius neighbor query
                                   for pwn, spd in zip(self.preference_weighted_neighbourhoods,
                                                       self.subspace_preference_dimensionalities)])
         return is_core_point
@@ -196,7 +146,7 @@ class PreDeCon:
             if point_idx not in labels_dict:  # if point has not already been visited
                 if self.preference_weighted_core_points[point_idx]:  # Is it a core point?
                     current_label_id += 1  # new cluster -> increment counter
-                    # Go through the neighbors and search there fore other cluster members
+                    # Go through the neighbors and search there for other cluster members
                     cluster_member_search_list = self.preference_weighted_neighbourhoods[point_idx].tolist()
                     while cluster_member_search_list:
                         cluster_candidate = cluster_member_search_list.pop()
